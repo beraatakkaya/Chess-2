@@ -1,573 +1,791 @@
 import pygame
-import copy
+import time
 
-pygame.init()
+width, height = 840, 640
+rows, cols = 8, 8
+square_size = height // cols
+
+white = (240,217,181)
+brown = (181,136,99)
+black = (0,0,0)
+
 pygame.mixer.init()
-
 move_sound = pygame.mixer.Sound("sounds/move.mp3")
 capture_sound = pygame.mixer.Sound("sounds/capture.mp3")
 check_mate_sound = pygame.mixer.Sound("sounds/checkmate.mp3")
 
-Width , Height = 1400 , 1400
-Rows,Cols = 8,8
-Square_Size = (Width-600) // Rows
-
-White = (240,217,181)
-Brown = (181,136,99)
-Black = (0, 0, 0)
-Gray = (180, 180, 180)
-
-WIN = pygame.display.set_mode((Width,Height))
-pygame.display.set_caption('Chess')
-
-white_time = 300 
-black_time = 300
-last_time = pygame.time.get_ticks()  
-valid_moves = []
-selected_square = None
-turn = 'w'
-en_passant_target = None
-castling = ['1', '1', '1', '1']
-
 pieces = {}
-last_time = pygame.time.get_ticks()
-
 def load_images():
-    pieces_types = ['P', 'R', 'N', 'B', 'Q', 'K']
-    colors = ['w', 'b']
-    for color in colors:
-        for piece in pieces_types:
-            key = color + piece
-            image_path = f'images/{key}.png'
-            image = pygame.image.load(image_path)
-            image = pygame.transform.scale(image, (Square_Size,Square_Size))
-            pieces[key] = image
+    pieces_types = ['P', 'R', 'N', 'B', 'Q', 'K','p','r','n','b','q','k']
+    for piece in pieces_types:
+        image_path = f'images/{piece}.png'
+        image = pygame.image.load(image_path)
+        image = pygame.transform.scale(image, (square_size,square_size))
+        pieces[piece] = image
 load_images()
 
-board = [
-    ["bR", "bN", "bB", "bQ", "bK", "bB", "bN", "bR"],
-    ["bP", "bP", "bP", "bP", "bP", "bP", "bP", "bP"],
-    ["--", "--", "--", "--", "--", "--", "--", "--"],
-    ["--", "--", "--", "--", "--", "--", "--", "--"],
-    ["--", "--", "--", "--", "--", "--", "--", "--"],
-    ["--", "--", "--", "--", "--", "--", "--", "--"],
-    ["wP", "wP", "wP", "wP", "wP", "wP", "wP", "wP"],
-    ["wR", "wN", "wB", "wQ", "wK", "wB", "wN", "wR"]
-]
-board_history = [copy.deepcopy(board),None,castling]
-history_index = 0
+class Game:
+    def __init__(self, fen):
+        pygame.init()
+        self.screen = pygame.display.set_mode((width, height))
+        pygame.display.set_caption("Chess")
+        self.font = pygame.font.SysFont('arial', 48)
+        self.board = self.fen_to_board(fen)
 
-def get_rook_moves(board, row, col):
-    moves = []
-    color = board[row][col][0]
-    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]  
+        self.selected_square = None
+        self.draw_offer_white = False
+        self.draw_offer_black = False
+        self.turn = fen.split()[1]
+        self.valid_moves = []
+        self.white_time = 300 
+        self.black_time = 300
+        self.last_time = time.time()
+        self.game_over = False
+        self.history = [(fen, self.white_time, self.black_time)]
+        self.history_index = 0
+        self.castling_rights = fen.split()[2]
+        self.en_passant_target = self.get_en_passant_from_fen(fen)
+        enemy_color = 'b' if self.turn == 'w' else 'w'
+        self.halfmove_clock = int(fen.split()[4])
+        self.fullmove_number = int(fen.split()[5])
+        self.is_gameover(enemy_color)
 
-    for dr, dc in directions:
-        r, c = row + dr, col + dc
-        while 0 <= r < 8 and 0 <= c < 8:
-            target = board[r][c]
-            if target == "--":
-                moves.append((r, c))  
-            elif target[0] != color: 
-                moves.append((r, c))
-                break
-            else:
-                break 
-            r += dr
-            c += dc
-    return moves
+    def fen_to_board(self, fen):
+        board = []
+        fen_rows = fen.split()[0].split("/")
+        for row in fen_rows:
+            board_row = []
+            for char in row:
+                if char.isdigit():
+                    board_row.extend(["."] * int(char))
+                else:
+                    board_row.append(char)
+            board.append(board_row)
+        return board
+    def board_to_fen(self):
+        fen_rows = []
+        for row in self.board:
+            empty = 0
+            fen_row = ""
+            for cell in row:
+                if cell == ".":
+                    empty += 1
+                else:
+                    if empty > 0:
+                        fen_row += str(empty)
+                        empty = 0
+                    fen_row += cell
+            if empty > 0:
+                fen_row += str(empty)
+            fen_rows.append(fen_row)
+        
+        board_fen = "/".join(fen_rows)
+        turn_fen = self.turn
+        castling_fen = self.castling_rights if self.castling_rights else "-"
+        ep_fen = '-' if self.en_passant_target is None else chr(self.en_passant_target[1] + ord('a')) + str(8 - self.en_passant_target[0])
+        return f"{board_fen} {turn_fen} {castling_fen} {ep_fen} {self.halfmove_clock} {self.fullmove_number}"
+    def get_en_passant_from_fen(self, fen):
+        parts = fen.split()
+        if len(parts) >= 4 and parts[3] != '-':
+            col = ord(parts[3][0]) - ord('a')
+            row = 8 - int(parts[3][1])
+            return (row, col)
+        return None
+    def get_pawn_moves(self, row, col):
+        moves = []
+        piece = self.board[row][col]
+        color = 'w' if piece.isupper() else 'b'
+        direction = -1 if color == 'w' else 1
+        start_row = 6 if color == 'w' else 1
+        if 0 <= row + direction < 8:
+            if self.board[row + direction][col] == ".":
+                moves.append((row + direction, col))
 
-def get_knight_moves(board, row, col):
-    moves = []
-    piece = board[row][col]
-    if piece == "--" or piece[1] != "N":
+                if row == start_row and self.board[row + 2 * direction][col] == ".":
+                    moves.append((row + 2 * direction, col))
+
+        if self.en_passant_target:
+            ep_row, ep_col = self.en_passant_target
+            if row == (3 if color == 'w' else 4) and abs(ep_col - col) == 1 and ep_row == row + direction:
+                moves.append((ep_row, ep_col))
+
+        for dc in [-1, 1]:
+            new_col = col + dc
+            new_row = row + direction
+            if 0 <= new_col < 8 and 0 <= new_row < 8:
+                target = self.board[new_row][new_col]
+                if target != "." and (
+                    (color == 'w' and target.islower()) or
+                    (color == 'b' and target.isupper())):
+                    moves.append((new_row, new_col))
         return moves
+    def get_pawn_attacks(self, row, col):
+        moves = []
+        piece = self.board[row][col]
+        color = 'w' if piece.isupper() else 'b'
+        directions = [(-1, -1), (-1, 1)] if color == 'w' else [(1, -1), (1, 1)]
 
-    color = piece[0]
-    knight_moves = [(-2,-1),(-2,1),(-1,-2),(-1,2),(1,-2),(1,2),(2,-1),(2,1)]
-    for dr, dc in knight_moves:
-        r, c = row + dr, col + dc
-        if 0 <= r < 8 and 0 <= c < 8:
-            target = board[r][c]
-            if target == "--" or target[0] != color:
+        for dr, dc in directions:
+            r, c = row + dr, col + dc
+            if 0 <= r < 8 and 0 <= c < 8:
                 moves.append((r, c))
-    return moves
-def get_bishop_moves(board, row, col):
-    moves = []
-    color = board[row][col][0]
-    directions = [(-1,-1), (-1,1), (1,-1), (1,1)] 
+        return moves
+    def promote_pawn(self, row, col, piece):
+        promotion_piece = None
 
-    for dr, dc in directions:
-        r, c = row + dr, col + dc
-        while 0 <= r < 8 and 0 <= c < 8:
-            target = board[r][c]
-            if target == "--":
-                moves.append((r, c))
-            elif target[0] != color:
-                moves.append((r, c))
-                break
-            else:
-                break
-            r += dr
-            c += dc
-    return moves
+        if piece.isupper():
+            options = ['Q', 'R', 'N', 'B']
+            start_row = 0 
+            direction = 1
+        else:  
+            options = ['b', 'n', 'r', 'q']
+            start_row = row - 3  
+            direction = 1
 
-def get_king_moves(board, row, col):
-    moves = []
-    color = board[row][col][0]
-    directions = [(-1, -1), (-1, 0), (-1, 1), 
-                  (0, -1),           (0, 1), 
-                  (1, -1), (1, 0), (1, 1)] 
+        selecting = True
+        while selecting:
+            self.draw_board()
+            self.highlight_selected_square()
+            self.draw_pieces()
+            self.update_timer()
+            self.draw_timer()
 
-    for dr, dc in directions:
-        r, c = row + dr, col + dc
-        if 0 <= r < 8 and 0 <= c < 8:
-            target = board[r][c]
-            if target == "--" or target[0] != color:
-                moves.append((r, c))  
+            for i, opt in enumerate(options):
+                x = col * square_size
+                y = (start_row + i * direction) * square_size
 
-    if color == 'w':
-        if castling[1] == '1':
-            if board[7][5] == "--" and board[7][6] == "--":
-                if not is_in_check(board, "w") and not is_in_check_after_move(board, (7, 4), (7, 5), "w") and not is_in_check_after_move(board, (7, 4), (7, 6), "w"):
-                    moves.append((7, 6)) 
-        if castling[0] == '1':
-            if board[7][1] == "--" and board[7][2] == "--" and board[7][3] == "--":
-                if not is_in_check(board, "w") and not is_in_check_after_move(board, (7, 4), (7, 3), "w") and not is_in_check_after_move(board, (7, 4), (7, 2), "w"):
-                    moves.append((7, 2)) 
+                pygame.draw.rect(self.screen, (200, 200, 200), (x, y, square_size, square_size))
+                self.screen.blit(pieces[opt], (x, y))
 
-    if color == 'b':
-        if castling[3] == '1':
-            if board[0][5] == "--" and board[0][6] == "--":
-                if not is_in_check(board, "b") and not is_in_check_after_move(board, (0, 4), (0, 5), "b") and not is_in_check_after_move(board, (0, 4), (0, 6), "b"):
-                    moves.append((0, 6))
-        if castling[2] == '1':
-            if board[0][1] == "--" and board[0][2] == "--" and board[0][3] == "--":
-                if not is_in_check(board, "b") and not is_in_check_after_move(board, (0, 4), (0, 3), "b") and not is_in_check_after_move(board, (0, 4), (0, 2), "b"):
-                    moves.append((0, 2))            
-    return moves
+            pygame.display.flip()
 
-def get_queen_moves(board, row, col):
-    moves = []
-    color = board[row][col][0]
-    
-    directions = [(-1, 0), (1, 0), (0, -1), (0, 1), 
-                  (-1, -1), (-1, 1), (1, -1), (1, 1)] 
-
-    for dr, dc in directions:
-        r, c = row + dr, col + dc
-        while 0 <= r < 8 and 0 <= c < 8:
-            target = board[r][c]
-            if target == "--": 
-                moves.append((r, c))
-            elif target[0] != color:  
-                moves.append((r, c))
-                break  
-            else:
-                break 
-            r += dr
-            c += dc
-
-    return moves
-
-def get_pawn_moves(board, row, col):
-    moves = []
-    color = board[row][col][0]
-    direction = -1 if color == "w" else 1 
-    start_row = 6 if color == "w" else 1 
-
-    r, c = row + direction, col
-    if 0 <= r < 8 and board[r][c] == "--":
-        moves.append((r, c))
-
-    if row == start_row:
-        r2 = row + 2 * direction
-        if 0 <= r2 < 8 and board[r][c] == "--" and board[r2][c] == "--":
-            moves.append((r2, c))
-
-    for dc in [-1, 1]:
-        r, c = row + direction, col + dc
-        if 0 <= r < 8 and 0 <= c < 8:
-            target = board[r][c]
-            if target != "--" and target[0] != color:
-                moves.append((r, c))
-
-            if en_passant_target == (r, c):
-                moves.append((r, c))
-
-    return moves
-
-def promote_pawn(win, turn):
-    font = pygame.font.SysFont("Arial", 32)
-    promotion_pieces = ["Q", "R", "B", "N"] 
-    box_width = 300
-    box_height = 80
-    box_x = Width // 2 - box_width // 2
-    box_y = Height // 2 - box_height // 2
-
-    piece_width = box_width // 4
-    selected_piece = None
-
-    pygame.draw.rect(WIN, Gray, (box_x, box_y, box_width, box_height))
-    for i, piece in enumerate(promotion_pieces):
-        rect = pygame.Rect(box_x + i * piece_width, box_y, piece_width, box_height)
-        pygame.draw.rect(WIN, White, rect, 2)
-        piece_text = font.render(piece, True, Black)
-        text_rect = piece_text.get_rect(center=rect.center)
-        WIN.blit(piece_text, text_rect)
-    pygame.display.flip()
-
-def is_in_check_after_move(board, from_pos, to_pos, color):
-    temp_board = copy.deepcopy(board)
-    r1, c1 = from_pos
-    r2, c2 = to_pos
-    temp_board[r2][c2] = temp_board[r1][c1]
-    temp_board[r1][c1] = "--"
-    return is_in_check(temp_board, color)
-
-def is_in_check(board, color):
-    king_pos = None
-    for row in range(8):
-        for col in range(8):
-            if board[row][col] == color + "K":
-                king_pos = (row, col)
-                break
-        if king_pos:
-            break
-
-    enemy_color = "b" if color == "w" else "w"
-    for r in range(8):
-        for c in range(8):
-            if board[r][c].startswith(enemy_color):
-                piece_type = board[r][c][1]
-                
-                if piece_type == "N":
-                    moves = get_knight_moves(board, r, c)
-                elif piece_type == "B":
-                    moves = get_bishop_moves(board, r, c)
-                elif piece_type == "R":
-                    moves = get_rook_moves(board, r, c)
-                elif piece_type == "Q":
-                    moves = get_queen_moves(board, r, c)
-                elif piece_type == "K":
-                    moves = get_king_moves(board, r, c)
-                elif piece_type == "P":
-                    moves = get_pawn_moves(board, r, c)
-                else:
-                    moves = []
-
-                if king_pos in moves:
-                    return True
-    return False
-
-def highlight_king_in_check(win, board, color):
-    if not is_in_check(board, color):
-        return 
-
-    for row in range(8):
-        for col in range(8):
-            if board[row][col] == color + "K":
-                center_x = col * Square_Size + Square_Size // 2
-                center_y = row * Square_Size + Square_Size // 2
-
-                # Parıltı efekti: kırmızı yarı saydam çember
-                glow_surface = pygame.Surface((Square_Size, Square_Size), pygame.SRCALPHA)
-                pygame.draw.circle(glow_surface, (255, 0, 0, 90), (Square_Size // 2, Square_Size // 2), Square_Size // 2)
-                win.blit(glow_surface, (col * Square_Size, row * Square_Size))
-
-                break
-
-def filter_legal_moves(board, moves, row, col, color):
-    legal_moves = []
-
-    for r, c in moves:
-        temp_board = copy.deepcopy(board) 
-        temp_board[r][c] = temp_board[row][col] 
-        temp_board[row][col] = "--"  
-
-        if not is_in_check(temp_board, color):
-            legal_moves.append((r, c))
-
-    return legal_moves    
-
-def is_gameover(board, color):
-    for row in range(8):
-        for col in range(8):
-            piece = board[row][col]
-            if piece != "--" and piece[0] == color:
-                piece_type = piece[1]
-                if piece_type == "P":
-                    moves = get_pawn_moves(board, row, col)
-                elif piece_type == "R":
-                    moves = get_rook_moves(board, row, col)
-                elif piece_type == "N":
-                    moves = get_knight_moves(board, row, col)
-                elif piece_type == "B":
-                    moves = get_bishop_moves(board, row, col)
-                elif piece_type == "Q":
-                    moves = get_queen_moves(board, row, col)
-                elif piece_type == "K":
-                    moves = get_king_moves(board, row, col)
-                else:
-                    moves = []
-
-                legal_moves = filter_legal_moves(board, moves, row, col, color)
-                if legal_moves:
-                    return False
-    return True
-
-def draw_pieces(screen, board):
-    for row in range(8):
-        for col in range(8):
-            piece = board[row][col]
-            if piece != "--":
-                screen.blit(pieces[piece], (col * Square_Size, row * Square_Size))
-def highlight_selected_square(win, selected):
-    if selected:
-        row, col = selected
-        s = pygame.Surface((Square_Size, Square_Size))
-        s.set_alpha(100)  # saydamlık (0-255)
-        s.fill((0, 255, 0))  # yeşil vurgu rengi
-        win.blit(s, (col * Square_Size, row * Square_Size))
-def highlight_valid_moves(win, moves):
-    for move in moves:
-        row, col = move
-        x = col * Square_Size
-        y = row * Square_Size
-        size = 25
-
-        if board[row][col] == "--": 
-            pygame.draw.circle(win, (0, 255, 0), (x + Square_Size // 2, y + Square_Size // 2), 15)
-        else: 
-            pygame.draw.polygon(win, (0, 255, 0), [(x, y), (x + size, y), (x, y + size)])
-            pygame.draw.polygon(win, (0, 255, 0), [(x + Square_Size, y), (x + Square_Size - size, y), (x + Square_Size, y + size)])
-            pygame.draw.polygon(win, (0, 255, 0), [(x + Square_Size, y + Square_Size), (x + Square_Size - size, y + Square_Size), (x + Square_Size, y + Square_Size - size)])
-            pygame.draw.polygon(win, (0, 255, 0), [(x, y + Square_Size), (x + size, y + Square_Size), (x, y + Square_Size - size)])
-
-def draw_board(win):
-    for row in range(Rows):
-        for col in range(Cols):
-            if (row + col) % 2 == 0:
-                color = White
-            else:
-                color = Brown
-            pygame.draw.rect(win,color,(col*Square_Size,row*Square_Size,Square_Size,Square_Size))
-def get_square_under_mouse(pos):
-    x, y = pos
-    col = x // Square_Size
-    row = y // Square_Size
-    return row, col
-
-
-def show_time(win, color, time, pos):
-    font = pygame.font.SysFont('Arial', 30)
-    timer_text = font.render(f"{color} {int(time//60):02d}.{int(time%60):02d}", True, (255, 255 , 255))
-    win.blit(timer_text, pos)
-
-run = True
-promotion = False
-game_over = False
-while run:
-    current_time = pygame.time.get_ticks()
-    delta_time = (current_time - last_time) / 1000  
-    if turn == "w":
-        white_time -= delta_time
-    else:
-        black_time -= delta_time
-    last_time = current_time
-    WIN.fill((0,0,0))
-    white_timer_text = show_time(WIN, "White: ", white_time, (900, 600))
-    black_timer_text = show_time(WIN, "Black: ", black_time, (900, 400))
-
-    draw_board(WIN)
-    highlight_selected_square(WIN, selected_square)
-    draw_pieces(WIN,board)
-    highlight_valid_moves(WIN, valid_moves)
-    highlight_king_in_check(WIN, board, turn)
-    if promotion:
-        promote_pawn(WIN, turn)
-    
-
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            run = False
-            pygame.quit()
-            exit()
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            if promotion:
-                    font = pygame.font.SysFont("Arial", 32)
-                    promotion_pieces = ["Q", "R", "B", "N"] 
-                    box_width = 300
-                    box_height = 80
-                    box_x = Width // 2 - box_width // 2
-                    box_y = Height // 2 - box_height // 2
-
-                    piece_width = box_width // 4
-                    selected_piece = None
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    exit()
+                elif event.type == pygame.MOUSEBUTTONDOWN:
                     mx, my = pygame.mouse.get_pos()
-                    if box_y <= my <= box_y + box_height:
-                        index = (mx - box_x) // piece_width
-                        if 0 <= index < 4:
-                            selected_piece = promotion_pieces[index]
-                            board[row][col] = turn + selected_piece
-                            promotion = False
-                            turn =  'b' if turn == 'w' else 'w'
-                            board_copy = copy.deepcopy(board)
-                            board_history.append((board_copy, en_passant_target,copy.deepcopy(castling)))
-                            history_index += 1          
-                            selected_square = None           
-                            valid_moves = []
+                    selected_col = mx // square_size
+                    selected_row = my // square_size
 
-            else:
-                pos = pygame.mouse.get_pos()
-                row, col = get_square_under_mouse(pos)
-                print("Tıklanan kare:", row, col)
-                if row > 7 or row < 0 or col > 7 or col < 0:
-                    continue
-                print(castling)
-                print(f'Beyazin zamani: {round(white_time/60,3)}')
-                print(f'Siyahin zamani: {round(black_time/60,3)}')
-                if selected_square and (row, col) in valid_moves:
-                    if history_index < len(board_history) - 1:
-                        board_history = board_history[:history_index + 1]
-                    sr, sc = selected_square
+                    for i in range(4):
+                        opt_row = start_row + i * direction
+                        if selected_row == opt_row and selected_col == col:
+                            promotion_piece = options[i]
+                            selecting = False
+                            break
 
-                    if board[sr][sc][1] == "K" and abs(sc - col) == 2:
-                        if col == 6:
-                            board[sr][5] = board[sr][7]
-                            board[sr][7] = "--"
-                        elif col == 2: 
-                            board[sr][3] = board[sr][0]
-                            board[sr][0] = "--"
+        self.board[row][col] = promotion_piece
 
-                    if board[sr][sc][1] == 'K':
-                        if turn == 'w':
-                            castling[0]  = castling[1]  = '0'
-                        else:
-                            castling[2]  = castling[3]  = '0'
-                    if board[sr][sc][1] == 'R':
-                            if turn == 'w':
-                                if sr == 7 and sc == 0:
-                                    castling[0] = '0' 
-                                elif sr == 7 and sc == 7:
-                                    castling[1] = '0'
-                            else:
-                                if sr == 0 and sc == 0:
-                                    castling[2] = '0'
-                                elif sr == 0 and sc == 7:
-                                    castling[3] = '0'
+    def get_rook_moves(self, row, col):
+        moves = []
+        piece = self.board[row][col]
+        color = 'w' if piece.isupper() else 'b'
+        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]  
 
-                    if board[sr][sc][1] == "P":
-                        if (row, col) == en_passant_target:
-                            board[sr][col] = "--"
-                    if board[row][col] == "--":
-                        move_sound.play()
-                    else:
-                        capture_sound.play()  
-                    board[row][col] = board[sr][sc]  
-                    board[sr][sc] = "--"
-                    if board[row][col][1] == "P" and (row == 0 or row == 7):
-                        promotion = True
-
-                    if board[0][0] != "bR":
-                        castling[2] = '0'
-                    if board[0][7] != "bR":
-                        castling[3] = '0'
-                    if board[7][0] != "wR":
-                        castling[0] = '0'
-                    if board[7][7] != "wR":
-                        castling[1] = '0'   
-
-                    if board[row][col][1] == "P" and abs(sr - row) == 2:
-                        en_passant_target = ((sr + row) // 2, sc)
-                    else:
-                        en_passant_target = None
-
-                    if not promotion:
-                        board_copy = copy.deepcopy(board)
-                        board_history.append((board_copy, en_passant_target,copy.deepcopy(castling)))
-                        history_index += 1          
-                        selected_square = None           
-                        valid_moves = []
-                        turn = 'b' if turn == 'w' else 'w' 
-                if selected_square == (row, col):
-                    selected_square = None
-                    valid_moves = []
-                elif board[row][col][0] == turn:
-                    selected_square = (row, col)
-                    piece_type = board[row][col][1]
-                    if piece_type == "N":
-                        valid_moves = get_knight_moves(board, row, col)
-                    elif piece_type == "B":
-                        valid_moves = get_bishop_moves(board, row, col)
-                    elif piece_type == "P":
-                        valid_moves = get_pawn_moves(board, row, col)
-                    elif piece_type == "R":
-                        valid_moves = get_rook_moves(board, row, col)
-                    elif piece_type == "Q":
-                        valid_moves = get_queen_moves(board, row, col)
-                    elif piece_type == "K":
-                        valid_moves = get_king_moves(board, row, col)
-                    else:
-                        valid_moves = []
-                    valid_moves = filter_legal_moves(board, valid_moves, row, col, turn)
+        for dr, dc in directions:
+            r, c = row + dr, col + dc
+            while 0 <= r < 8 and 0 <= c < 8:
+                target = self.board[r][c]
+                if target == ".":
+                    moves.append((r, c))
+                elif (color == 'w' and target.islower()) or (color == 'b' and target.isupper()):
+                    moves.append((r, c)) 
+                    break
                 else:
-                    selected_square = None
-                    valid_moves = []
+                    break  
+                r += dr
+                c += dc
+        return moves
+    def get_knight_moves(self, row, col):
+        moves = []
+        piece = self.board[row][col]
+        color = 'w' if piece.isupper() else 'b'
+        knight_moves = [(-2,-1),(-2,1),(-1,-2),(-1,2),(1,-2),(1,2),(2,-1),(2,1)]
 
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_z: 
-                if history_index > 0:
-                    history_index -= 1
-                    board = copy.deepcopy(board_history[history_index][0])
-                    en_passant_target = board_history[history_index][1]
-                    castling = board_history[history_index][2]
-                    turn = turn if promotion else 'b' if turn == 'w' else 'w'
-                    selected_square = None
-                    valid_moves = []
-                    game_over = False
+        for dr, dc in knight_moves:
+            r, c = row + dr, col + dc
+            if 0 <= r < 8 and 0 <= c < 8:
+                target = self.board[r][c]
+                if target == "." or (color == 'w' and target.islower()) or (color == 'b' and target.isupper()):
+                    moves.append((r, c))
+        return moves
+    def get_bishop_moves(self, row, col):
+        moves = []
+        piece = self.board[row][col]
+        color = 'w' if piece.isupper() else 'b'
+        directions = [(-1, -1), (-1, 1), (1, -1), (1, 1)]  
 
-            elif event.key == pygame.K_x:
-                if history_index < len(board_history) - 1:
-                    history_index += 1
-                    board = copy.deepcopy(board_history[history_index][0])
-                    en_passant_target = board_history[history_index][1]
-                    castling = board_history[history_index][2]
-                    turn = turn if promotion else 'b' if turn == 'w' else 'w'
-                    selected_square = None
-                    valid_moves = []    
+        for dr, dc in directions:
+            r, c = row + dr, col + dc
+            while 0 <= r < 8 and 0 <= c < 8:
+                target = self.board[r][c]
+                if target == ".":
+                    moves.append((r, c))
+                elif (color == 'w' and target.islower()) or (color == 'b' and target.isupper()):
+                    moves.append((r, c))
+                    break
+                else:
+                    break 
+                r += dr
+                c += dc
+        return moves
+    def get_queen_moves(self, row, col):
+        return self.get_bishop_moves(row, col) + self.get_rook_moves(row, col)
+    def get_king_moves(self, row, col):
+        moves = []
+        piece = self.board[row][col]
+        color = 'w' if piece.isupper() else 'b'
+        directions = [(-1, -1), (-1, 0), (-1, 1),
+                    (0, -1),          (0, 1),
+                    (1, -1), (1, 0),  (1, 1)]
 
+        for dr, dc in directions:
+            r, c = row + dr, col + dc
+            if 0 <= r < 8 and 0 <= c < 8:
+                target = self.board[r][c]
+                if target == "." or (color == 'w' and target.islower()) or (color == 'b' and target.isupper()):
+                    moves.append((r, c))
+        if not self.is_in_check(color):
+            if color == 'w':
+                if 'K' in self.castling_rights and self.board[7][5] == self.board[7][6] == ".":
+                    if not self.square_attacked(7, 5, 'b') and not self.square_attacked(7, 6, 'b'):
+                        moves.append((7, 6))  
+                if 'Q' in self.castling_rights and self.board[7][1] == self.board[7][2] == self.board[7][3] == ".":
+                    if not self.square_attacked(7, 2, 'b') and not self.square_attacked(7, 3, 'b'):
+                        moves.append((7, 2)) 
+            else:
+                if 'k' in self.castling_rights and self.board[0][5] == self.board[0][6] == ".":
+                    if not self.square_attacked(0, 5, 'w') and not self.square_attacked(0, 6, 'w'):
+                        moves.append((0, 6))
+                if 'q' in self.castling_rights and self.board[0][1] == self.board[0][2] == self.board[0][3] == ".":
+                    if not self.square_attacked(0, 2, 'w') and not self.square_attacked(0, 3, 'w'):
+                        moves.append((0, 2))  
+        return moves
+    def square_attacked(self, row, col, attacker_color):
+        for r in range(8):
+            for c in range(8):
+                piece = self.board[r][c]
+                if piece == ".":
+                    continue
+                if (attacker_color == 'w' and piece.isupper()) or (attacker_color == 'b' and piece.islower()):
+                    if piece == 'P':
+                        if (row, col) in self.get_pawn_attacks(r, c):
+                            return True
+                    else:
+                        if (row, col) in self.get_piece_moves(r, c,ignore =True):
+                            return True
+        return False
+    def draw_board(self):
+        font = pygame.font.SysFont(None, 24) 
+        files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+        ranks = ['8', '7', '6', '5', '4', '3', '2', '1']
+        for row in range(rows):
+            for col in range(cols):
+                color = white if (row + col) % 2 == 0 else brown
+                pygame.draw.rect(self.screen, color, (col * square_size, row * square_size, square_size, square_size))
+                
+                text_color = brown if color == white else white
+                if col == cols - 1:
+                    rank_label = font.render(ranks[row], True, text_color)
+                    self.screen.blit(rank_label, (col * square_size + square_size - 15, row * square_size + 5))
+                if row == 7:
+                    file_label = font.render(files[col], True, text_color)
+                    self.screen.blit(file_label, (col * square_size + 5, self.screen.get_height() - 20))
 
-    '''                         for boarda in board_history:
-                            if board_history.count(boarda) == 3:
-                                font = pygame.font.SysFont('arial', 50)
-                                print("PAT!")
-                                text = font.render(('PAT!'), True, (255, 0, 0))
-                                WIN.blit(text, ((Width-600) // 2 - text.get_width() // 2, (Height-600) // 2 - text.get_height() // 2))
-
-                                pygame.display.update()
-                                pygame.time.set_timer(pygame.USEREVENT, 3000) 
-                                game_over = True'''
-    if is_gameover(board, turn):
-        font = pygame.font.SysFont('arial', 50)
-        if is_in_check(board,turn):
-            print("ŞAH MAT! Kazanan:", "Beyaz" if turn == 'b' else "Siyah")
-            text = font.render(f'SAH MAT! Kazanan: {"Beyaz" if turn == "b" else "Siyah"}', True, (255, 0, 0))
-            WIN.blit(text, ((Width-600) // 2 - text.get_width() // 2, (Height-600) // 2 - text.get_height() // 2))
+    def draw_pieces(self):
+        for row in range(rows):
+            for col in range(cols):
+                piece = self.board[row][col]
+                if piece != ".":
+                    self.screen.blit(pieces[piece], (col * square_size, row * square_size))  
+    def is_current_players_piece(self, piece):
+        if piece == ".":
+            return False
+        if self.turn == 'w':
+            return piece.isupper()
         else:
-            print("PAT!")
-            text = font.render('PAT!'), True, (255, 0, 0)
-            WIN.blit(text, ((Width-600) // 2 - text.get_width() // 2, (Height-600) // 2 - text.get_height() // 2))
-            
+            return piece.islower()
+    def highlight_selected_square(self):
+        if self.selected_square:
+            row, col = self.selected_square
+            s = pygame.Surface((square_size, square_size))
+            s.set_alpha(100) 
+            s.fill((0, 255, 0)) 
+            self.screen.blit(s, (col * square_size, row * square_size))      
+    def get_piece_moves(self, row, col, ignore = False):
+        piece = self.board[row][col]
+        if piece == ".":
+            return []
+        if piece.lower() == 'n':
+            return self.get_knight_moves(row, col)
+        elif piece.lower() == 'b':
+            return self.get_bishop_moves(row, col)
+        elif piece.lower() == 'r':
+            return self.get_rook_moves(row, col)
+        elif piece.lower() == 'q':
+            return self.get_queen_moves(row, col)
+        elif piece.lower() == 'k' and ignore == False:
+            return self.get_king_moves(row, col)
+        elif piece.lower() == 'p':
+            return self.get_pawn_moves(row, col)
+        return []
+    def highlight_valid_moves(self, moves):
+        for row, col in moves:
+            x = col * square_size
+            y = row * square_size
+            size = 25
+            if self.board[row][col] == ".":
+                pygame.draw.circle(self.screen, (0, 255, 0), (x + square_size // 2, y + square_size // 2), 15)
+            else:
+                pygame.draw.polygon(self.screen, (0, 255, 0), [(x, y), (x + size, y), (x, y + size)])
+                pygame.draw.polygon(self.screen, (0, 255, 0), [(x + square_size, y), (x + square_size - size, y), (x + square_size, y + size)])
+                pygame.draw.polygon(self.screen, (0, 255, 0), [(x + square_size, y + square_size), (x + square_size - size, y + square_size), (x + square_size, y + square_size - size)])
+                pygame.draw.polygon(self.screen, (0, 255, 0), [(x, y + square_size), (x + size, y + square_size), (x, y + square_size - size)])
+    def move_piece(self, start_pos, end_pos):
+        self.en_passant_target = None
 
-        pygame.display.update()
-        pygame.time.set_timer(pygame.USEREVENT, 3000)
-        if not game_over:
+        start_row, start_col = start_pos
+        end_row, end_col = end_pos
+
+        piece = self.board[start_row][start_col]
+        target = self.board[end_row][end_col]  
+
+        if piece.lower() == 'p' or target != ".":
+            self.halfmove_clock = 0 
+        else:
+            self.halfmove_clock += 1 
+
+        if target != "." or (piece.lower() == 'p' and start_col != end_col and self.board[end_row][end_col] == "."):
+            capture_sound.play()  
+        else:
+            move_sound.play()
+
+        if piece.lower() == 'p' and abs(end_row - start_row) == 2:
+            self.en_passant_target = ((start_row + end_row) // 2, start_col)
+
+        if piece.lower() == 'p' and (start_col != end_col) and self.board[end_row][end_col] == ".":
+            self.board[start_row][end_col] = "."
+
+        self.board[end_row][end_col] = piece
+
+        if piece == 'K':
+            self.castling_rights = self.castling_rights.replace('K', '').replace('Q', '')
+        elif piece == 'k':
+            self.castling_rights = self.castling_rights.replace('k', '').replace('q', '')
+        elif piece == 'R':
+            if start_row == 7 and start_col == 0:
+                self.castling_rights = self.castling_rights.replace('Q', '')
+            elif start_row == 7 and start_col == 7:
+                self.castling_rights = self.castling_rights.replace('K', '')
+        elif piece == 'r':
+            if start_row == 0 and start_col == 0:
+                self.castling_rights = self.castling_rights.replace('q', '')
+            elif start_row == 0 and start_col == 7:
+                self.castling_rights = self.castling_rights.replace('k', '')    
+        self.board[start_row][start_col] = "."   
+        if piece.lower() == 'k':
+            if start_row == 7 and start_col == 4:
+                if end_row == 7 and end_col == 6: 
+                    self.board[7][5] = 'R'
+                    self.board[7][7] = '.'
+                elif end_row == 7 and end_col == 2:  
+                    self.board[7][3] = 'R'
+                    self.board[7][0] = '.'
+            elif start_row == 0 and start_col == 4:
+                if end_row == 0 and end_col == 6: 
+                    self.board[0][5] = 'r'
+                    self.board[0][7] = '.'
+                elif end_row == 0 and end_col == 2: 
+                    self.board[0][3] = 'r'
+                    self.board[0][0] = '.'
+
+        if piece == 'P' and end_row == 0:
+            self.promote_pawn(end_row, end_col, piece)
+        elif piece == 'p' and end_row == 7:
+            self.promote_pawn(end_row, end_col, piece)
+
+        if self.turn == 'b':
+            self.fullmove_number += 1
+
+        self.selected_square = None              
+        self.valid_moves = []                
+        self.switch_turn()            
+        fen = self.board_to_fen()
+        print(fen)
+        self.history = self.history[:self.history_index + 1]
+        self.history.append((fen, self.white_time, self.black_time))  
+        self.history_index += 1
+        self.board = self.fen_to_board(fen)
+
+        self.is_gameover(self.turn)
+        self.check_draw_conditions()
+
+    def switch_turn(self):
+        self.turn = 'b' if self.turn == 'w' else 'w'
+    def get_valid_moves(self, row, col):
+        original_piece = self.board[row][col]
+        color = 'w' if original_piece.isupper() else 'b'
+        moves = self.get_piece_moves(row, col)
+        legal_moves = []
+
+        for r, c in moves:
+            captured = self.board[r][c]
+            self.board[r][c] = original_piece
+            self.board[row][col] = "."
+            if not self.is_in_check(color):
+                legal_moves.append((r, c))
+            self.board[row][col] = original_piece
+            self.board[r][c] = captured
+        return legal_moves
+    def is_in_check(self, color):
+        king = 'K' if color == 'w' else 'k'
+        king_pos = None
+        for row in range(8):
+            for col in range(8):
+                if self.board[row][col] == king:
+                    king_pos = (row, col)
+                    break
+            if king_pos:
+                break
+        for r in range(8):
+            for c in range(8):
+                piece = self.board[r][c]
+                if piece == ".":
+                    continue
+                if color == 'w' and piece.islower():
+                    if self.turn == 'b':
+                        enemy_moves = self.get_piece_moves(r, c,ignore=True)
+                    else:
+                        enemy_moves = self.get_piece_moves(r, c)
+                    if king_pos in enemy_moves:
+                        return True
+                elif color == 'b' and piece.isupper():
+                    if self.turn == 'w':
+                        enemy_moves = self.get_piece_moves(r, c,ignore=True)
+                    else:
+                        enemy_moves = self.get_piece_moves(r, c)
+                    if king_pos in enemy_moves:
+                        return True
+        return False
+    def get_check_square(self):
+        if not self.is_in_check(self.turn):
+           return None
+
+        king_piece = 'K' if self.turn == 'w' else 'k'
+        for row in range(8):
+            for col in range(8):
+                if self.board[row][col] == king_piece:
+                    return (row, col)
+        return None
+    def highlight_check_square(self):
+        check_square = self.get_check_square()
+        if check_square:
+            row, col = check_square
+            s = pygame.Surface((square_size, square_size))
+            s.set_alpha(100)
+            s.fill((255, 0, 0))  
+            self.screen.blit(s, (col * square_size, row * square_size))
+    def is_gameover(self, color):
+        if self.halfmove_clock == 75:
+            print("75 moves have passed, it's a forced draw.")
             check_mate_sound.play()
-        game_over = True
+            self.game_over = True
+        elif not self.has_legal_moves(color):
+            if self.is_in_check(color):
+                if color == 'w':
+                    print("Checkmate, Black Won!")
+                else:
+                    print("Checkmate, White Won!")
+            else:    
+                print("Stalemate!")
+            check_mate_sound.play()
+            self.game_over = True
+        else:
+            self.game_over = False
+    def check_draw_conditions(self):
+        if self.halfmove_clock >= 50:
+            print('50-move rule draw can be claimed.')
+            return True
+        
+        position_counts = {}
+        for entry in self.history:
+            fen = entry[0]
+            fen_parts = fen.split()
+            key = " ".join(fen_parts[:4]) 
+            if key in position_counts:
+                position_counts[key] += 1
+            else:
+                position_counts[key] = 1
+
+            if position_counts[key] >= 3:
+                print('Threefold repetition detected — draw can be claimed.')
+                return True
+        return False
+    def has_legal_moves(self, color):
+        for row in range(8):
+            for col in range(8):
+                piece = self.board[row][col]
+                if piece == ".":
+                    continue
+                if (color == 'w' and piece.isupper()) or (color == 'b' and piece.islower()):
+                    moves = self.get_piece_moves(row, col)
+                    for move in moves:
+                        if self.is_legal_move((row, col), move):
+                            return True
+        return False
+
+    def is_legal_move(self, start, end):
+        start_row, start_col = start
+        end_row, end_col = end
+        piece = self.board[start_row][start_col]
+        captured = self.board[end_row][end_col]
+
+        self.board[end_row][end_col] = piece
+        self.board[start_row][start_col] = "."
+
+        in_check = self.is_in_check('w' if piece.isupper() else 'b')
+
+        self.board[start_row][start_col] = piece
+        self.board[end_row][end_col] = captured
+
+        return not in_check
+
+    def update_timer(self):
+        if self.game_over:
+            return
+
+        now = time.time()
+        elapsed = now - self.last_time
+        self.last_time = now
+
+        if self.turn == 'w':
+            self.white_time -= elapsed
+            if self.white_time <= 0:
+                self.white_time = 0
+                self.game_over = True
+                print("White's time is up, Black wins!")
+        else:
+            self.black_time -= elapsed
+            if self.black_time <= 0:
+                self.black_time = 0
+                self.game_over = True
+                print("Black's time is up, White wins!")
+    def format_time(self, seconds):
+        minutes = int(seconds) // 60
+        secs = int(seconds) % 60
+        return f"{minutes:02}:{secs:02}"
+    def draw_timer(self):
+        font = pygame.font.SysFont('arial', 36, bold=True)
+        box_width, box_height = 130, 50
+        black_pos = (665, 90)
+        white_pos = (665, 490)
+
+        white_bg = (0, 100, 0) if self.turn == 'w' else (80, 80, 80)
+        black_bg = (0, 100, 0) if self.turn == 'b' else (80, 80, 80)
+
+        pygame.draw.rect(self.screen, white_bg, (*white_pos, box_width, box_height), border_radius=8)
+        pygame.draw.rect(self.screen, black_bg, (*black_pos, box_width, box_height), border_radius=8)
+
+        white_text = font.render(self.format_time(self.white_time), True, white)
+        black_text = font.render(self.format_time(self.black_time), True, white)
+
+        self.screen.blit(white_text, (white_pos[0] + 10, white_pos[1] + 7))
+        self.screen.blit(black_text, (black_pos[0] + 10, black_pos[1] + 7))
+    def draw_icons(self):
+        pygame.draw.rect(self.screen, black, (740, 440, 100, 50))
+        pygame.draw.rect(self.screen, black, (740, 160, 100, 50))  
+
+        font = pygame.font.SysFont('arial', 26)
+        x_font = pygame.font.SysFont('arial', 18)
+        self.icon_buttons = {}
+
+        positions = {
+            "white_draw": (740, 440),
+            "white_resign": (700, 440),
+            "black_draw": (740, 160),
+            "black_resign": (700, 160)
+        }
+
+        normal = (30, 30)
+        active = (40, 40)
+
+        if self.draw_offer_white:
+            rect = pygame.Rect(positions["white_draw"], active)
+            pygame.draw.rect(self.screen, (160, 100, 100), rect, border_radius=5)
+            text = font.render("½", True, (255, 255, 255))
+            self.screen.blit(text, text.get_rect(center=rect.center))
+            self.icon_buttons["white_draw"] = rect
+
+            cancel_rect = pygame.Rect(rect.right + 5, rect.top, 20, 20)
+            x_text = x_font.render("×", True, (255, 255, 255))
+            self.screen.blit(x_text, x_text.get_rect(center=cancel_rect.center))
+            self.icon_buttons["white_draw_cancel"] = cancel_rect
+        else:
+            rect = pygame.Rect(positions["white_draw"], normal)
+            pygame.draw.rect(self.screen, (100, 100, 100), rect, border_radius=5)
+            text = font.render("½", True, (255, 255, 255))
+            self.screen.blit(text, text.get_rect(center=rect.center))
+            self.icon_buttons["white_draw"] = rect
+
+        if self.draw_offer_black:
+            rect = pygame.Rect(positions["black_draw"], active)
+            pygame.draw.rect(self.screen, (160, 100, 100), rect, border_radius=5)
+            text = font.render("½", True, (255, 255, 255))
+            self.screen.blit(text, text.get_rect(center=rect.center))
+            self.icon_buttons["black_draw"] = rect
+
+            cancel_rect = pygame.Rect(rect.right + 5, rect.top, 20, 20)
+            x_text = x_font.render("×", True, (255, 255, 255))
+            self.screen.blit(x_text, x_text.get_rect(center=cancel_rect.center))
+            self.icon_buttons["black_draw_cancel"] = cancel_rect
+        else:
+            rect = pygame.Rect(positions["black_draw"], normal)
+            pygame.draw.rect(self.screen, (100, 100, 100), rect, border_radius=5)
+            text = font.render("½", True, (255, 255, 255))
+            self.screen.blit(text, text.get_rect(center=rect.center))
+            self.icon_buttons["black_draw"] = rect
+
+        rect = pygame.Rect(positions["white_resign"], normal)
+        pygame.draw.rect(self.screen, (100, 100, 100), rect, border_radius=5)
+        flag = font.render("🚩", True, (255, 255, 255))
+        self.screen.blit(flag, flag.get_rect(center=rect.center))
+        self.icon_buttons["white_resign"] = rect
+
+        rect = pygame.Rect(positions["black_resign"], normal)
+        pygame.draw.rect(self.screen, (100, 100, 100), rect, border_radius=5)
+        flag = font.render("🚩", True, (255, 255, 255))
+        self.screen.blit(flag, flag.get_rect(center=rect.center))
+        self.icon_buttons["black_resign"] = rect
 
 
 
-    pygame.display.update()
 
+    def go_back(self):
+        if self.history_index > 0:
+            self.history_index -= 1
+            fen, white_time, black_time = self.history[self.history_index]
+            self.board = self.fen_to_board(fen)
+            self.turn = fen.split()[1]
+            self.castling_rights = fen.split()[2]
+            self.en_passant_target = self.get_en_passant_from_fen(fen)
+            self.halfmove_clock = int(fen.split()[4])
+            self.fullmove_number = int(fen.split()[5])
+            self.white_time = white_time
+            self.black_time = black_time
+            self.selected_square = None
+            self.valid_moves = []
+
+    def go_forward(self):
+        if self.history_index < len(self.history) - 1:
+            self.history_index += 1
+            fen, white_time, black_time = self.history[self.history_index]
+            self.board = self.fen_to_board(fen)
+            self.turn = fen.split()[1]
+            self.castling_rights = fen.split()[2]
+            self.en_passant_target = self.get_en_passant_from_fen(fen)
+            self.halfmove_clock = int(fen.split()[4])
+            self.fullmove_number = int(fen.split()[5])
+            self.white_time = white_time
+            self.black_time = black_time
+            self.selected_square = None
+            self.valid_moves = []
+    def handle_mouse_click(self, pos):
+        if self.game_over:
+            return
+        if "white_draw_cancel" in self.icon_buttons and self.icon_buttons["white_draw_cancel"].collidepoint(pos):
+            self.draw_offer_white = False
+
+        if "black_draw_cancel" in self.icon_buttons and self.icon_buttons["black_draw_cancel"].collidepoint(pos):
+            self.draw_offer_black = False
+
+        if self.icon_buttons["white_draw"].collidepoint(pos):
+            self.draw_offer_white = not self.draw_offer_white
+            if self.draw_offer_white:
+                print("White has offered a draw.")
+                if self.check_draw_conditions():
+                    print("Draw conditions have been met. The game ended in a draw.")
+                    self.game_over = True
+            if self.draw_offer_white and self.draw_offer_black:
+                print("Both players offered a draw. The game ended in a draw.")
+                self.game_over = True
+        
+        if self.icon_buttons["black_draw"].collidepoint(pos):
+            self.draw_offer_black = not self.draw_offer_black
+            if self.draw_offer_black:
+                print("Black has offered a draw.")
+                if self.check_draw_conditions():
+                    print("Draw conditions have been met. The game ended in a draw.")
+                    self.game_over = True
+            if self.draw_offer_white and self.draw_offer_black:
+                print("Both players offered a draw. The game ended in a draw.")
+                self.game_over = True
+
+        if self.icon_buttons["white_resign"].collidepoint(pos):
+            print("White resigned. Black wins.")
+            self.game_over = True
+
+        if self.icon_buttons["black_resign"].collidepoint(pos):
+            print("Black resigned. White wins.")
+            self.game_over = True
+        
+        if self.game_over == True:
+            check_mate_sound.play()
+            return
+
+        col = pos[0] // square_size
+        row = pos[1] // square_size
+        if 0 <= row < 8 and 0 <= col < 8:
+            piece = self.board[row][col]
+            if self.selected_square and (row, col) in self.valid_moves:
+                self.move_piece(self.selected_square, (row, col))
+            elif self.is_current_players_piece(piece):
+                if self.selected_square == (row, col):
+                    self.selected_square = None
+                    self.valid_moves = []
+                else:
+                    self.selected_square = (row, col)
+                    self.valid_moves = self.get_valid_moves(row, col)
+            else:
+                self.selected_square = None
+                self.valid_moves = []
+
+
+    def run(self):
+        running = True
+        while running:
+            self.draw_board()
+            self.highlight_selected_square()
+            self.draw_pieces()
+            self.highlight_valid_moves(self.valid_moves)
+            self.update_timer()
+            self.draw_timer()
+            self.highlight_check_square()
+            self.draw_icons()
+            pygame.display.flip()
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    self.handle_mouse_click(pygame.mouse.get_pos())
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_LEFT:
+                        self.go_back()
+                        self.draw_offer_black = False
+                        self.draw_offer_white = False
+                        enemy_color = 'b' if self.turn == 'w' else 'w'
+                        self.is_gameover(enemy_color)
+                    elif event.key == pygame.K_RIGHT:
+                        self.go_forward()
+                        self.draw_offer_black = False
+                        self.draw_offer_white = False
+                        enemy_color = 'b' if self.turn == 'w' else 'w'
+                        if self.history_index>0:
+                            self.is_gameover(self.turn)
+                        else:
+                            self.is_gameover(enemy_color)
+                                            
+game = Game('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
+game.run()
 
