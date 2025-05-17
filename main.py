@@ -1,9 +1,13 @@
 import pygame
 import time
+import random
 
 width, height = 840, 640
 rows, cols = 8, 8
 square_size = height // cols
+
+pygame.init()
+screen = pygame.display.set_mode((width, height))
 
 white = (240,217,181)
 brown = (181,136,99)
@@ -23,11 +27,50 @@ def load_images():
         image = pygame.transform.scale(image, (square_size,square_size))
         pieces[piece] = image
 load_images()
+def main_menu():
+    global screen
+
+    pygame.display.set_caption("Chess Main Menu")
+    font = pygame.font.SysFont('arial', 48)
+    small_font = pygame.font.SysFont('arial', 28)
+
+    while True:
+        screen.fill((50, 50, 50))
+
+        title = font.render("Chess Game", True, (255, 255, 255))
+        screen.blit(title, (width//2 - title.get_width()//2, 100))
+
+        pvp_button = pygame.Rect(width//2 - 150, 250, 300, 60)
+        ai_button = pygame.Rect(width//2 - 150, 350, 300, 60)
+
+        pygame.draw.rect(screen, (100, 100, 250), pvp_button, border_radius=10)
+        pygame.draw.rect(screen, (100, 250, 100), ai_button, border_radius=10)
+
+        pvp_text = small_font.render("Player vs Player", True, (255, 255, 255))
+        ai_text = small_font.render("Player vs Computer", True, (255, 255, 255))
+
+        screen.blit(pvp_text, (pvp_button.centerx - pvp_text.get_width()//2, pvp_button.centery - pvp_text.get_height()//2))
+        screen.blit(ai_text, (ai_button.centerx - ai_text.get_width()//2, ai_button.centery - ai_text.get_height()//2))
+
+        pygame.display.flip()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if pvp_button.collidepoint(event.pos):
+                    pygame.event.clear(pygame.MOUSEBUTTONDOWN)
+                    return "pvp"
+                elif ai_button.collidepoint(event.pos):
+                    pygame.event.clear(pygame.MOUSEBUTTONDOWN)
+                    return "ai"
+
 
 class Game:
-    def __init__(self, fen):
-        pygame.init()
-        self.screen = pygame.display.set_mode((width, height))
+    def __init__(self, fen, vs_ai=False, ai_color='b'):
+        global screen
+        self.screen = screen
         pygame.display.set_caption("Chess")
         self.font = pygame.font.SysFont('arial', 48)
         self.board = self.fen_to_board(fen)
@@ -48,6 +91,8 @@ class Game:
         enemy_color = 'b' if self.turn == 'w' else 'w'
         self.halfmove_clock = int(fen.split()[4])
         self.fullmove_number = int(fen.split()[5])
+        self.vs_ai = vs_ai
+        self.ai_color = ai_color
         self.is_gameover(enemy_color)
 
     def fen_to_board(self, fen):
@@ -593,8 +638,8 @@ class Game:
         self.screen.blit(white_text, (white_pos[0] + 10, white_pos[1] + 7))
         self.screen.blit(black_text, (black_pos[0] + 10, black_pos[1] + 7))
     def draw_icons(self):
-        pygame.draw.rect(self.screen, black, (740, 440, 100, 50))
-        pygame.draw.rect(self.screen, black, (740, 160, 100, 50))  
+        pygame.draw.rect(self.screen, (50,50,50), (740, 440, 100, 50))
+        pygame.draw.rect(self.screen, (50,50,50), (740, 160, 100, 50))  
 
         font = pygame.font.SysFont('arial', 26)
         x_font = pygame.font.SysFont('arial', 18)
@@ -693,6 +738,8 @@ class Game:
     def handle_mouse_click(self, pos):
         if self.game_over:
             return
+        if self.vs_ai and self.turn == self.ai_color:
+            return
         if "white_draw_cancel" in self.icon_buttons and self.icon_buttons["white_draw_cancel"].collidepoint(pos):
             self.draw_offer_white = False
 
@@ -750,9 +797,22 @@ class Game:
                 self.selected_square = None
                 self.valid_moves = []
 
-
+    def make_ai_move(self):
+        all_moves = []
+        for row in range(8):
+            for col in range(8):
+                piece = self.board[row][col]
+                if piece != "." and ((self.ai_color == 'w' and piece.isupper()) or (self.ai_color == 'b' and piece.islower())):
+                    moves = self.get_valid_moves(row, col)
+                    for move in moves:
+                        all_moves.append(((row, col), move))
+        if all_moves:
+            move = random.choice(all_moves)
+            self.move_piece(*move)
     def run(self):
         running = True
+        pygame.time.wait(200)
+        pygame.event.clear()
         while running:
             self.draw_board()
             self.highlight_selected_square()
@@ -785,7 +845,14 @@ class Game:
                             self.is_gameover(self.turn)
                         else:
                             self.is_gameover(enemy_color)
-                                            
-game = Game('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
-game.run()
+            if self.vs_ai and self.turn == self.ai_color and not self.game_over:
+                self.make_ai_move()
+                                        
+mode = main_menu()
+if mode == "pvp":
+    game = Game('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
+    game.run()
+elif mode == "ai":
+    game = Game('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', vs_ai=True, ai_color='b')
+    game.run()
 
