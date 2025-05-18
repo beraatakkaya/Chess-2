@@ -1,6 +1,7 @@
 import pygame
 from time import sleep
 from game import Game
+from ai import minimax
 from ui import (
     draw_board,
     draw_pieces,
@@ -15,11 +16,8 @@ from ui import (
 )
 #from util import start_simulation, end_simulation
 
-fen = 'rnbqkbnr/ppppppPp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+fen = 'rnb1kbnr/ppp1pppp/8/1KPp2q1/8/8/PP1PPPPP/RNBQ1BNR w kq d6 0 1'
 
-
-# Game başlat
-# fen = '7R/4pkp1/3n3p/2NR3P/2n1BK2/2B2N1q/1P6/4r3 b - - 0 1'
 game = Game(fen)
 
 def run(game):
@@ -50,11 +48,14 @@ def run(game):
         draw_timer(game.white_time, game.black_time, game.turn)
         pygame.display.flip()
 
-        if not game.game_over:
-            game.make_ai_move(ai_color)
-            sleep(0.5)
-            if choice == 'ai':
-                ai_color = 'w' if ai_color == 'b' else 'b'
+        if not game.game_over and ai_color == game.turn:
+            _, best_move = minimax(game, 3, True, ai_color) 
+            if best_move:
+                game.move_piece(*best_move)
+
+            #sleep(0.5)
+            #if choice == 'ai':
+                #ai_color = 'w' if ai_color == 'b' else 'b'
 
 run(game)
 

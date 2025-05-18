@@ -332,13 +332,33 @@ class Game:
 
         for r, c in moves:
             captured = self.board[r][c]
+            en_passant = False
+            ep_captured_piece = None
+            ep_row, ep_col = -1, -1
+
+            # En passant kontrolü
+            if original_piece.lower() == 'p' and self.en_passant_target == (r, c) and self.board[r][c] == "." and col != c:
+                en_passant = True
+                ep_row = row  # Yani aynı satırda
+                ep_col = c
+                ep_captured_piece = self.board[ep_row][ep_col]
+                self.board[ep_row][ep_col] = "."
+
             self.board[r][c] = original_piece
             self.board[row][col] = "."
+
             if not self.is_in_check(color):
                 legal_moves.append((r, c))
+
             self.board[row][col] = original_piece
             self.board[r][c] = captured
+
+            # En passant alınan piyonu geri koy
+            if en_passant:
+                self.board[ep_row][ep_col] = ep_captured_piece
+
         return legal_moves
+
     def is_in_check(self, color):
         king = 'K' if color == 'w' else 'k'
         king_pos = None
