@@ -7,41 +7,42 @@ from ui import (
     highlight_selected_square,
     highlight_valid_moves,
     highlight_check_square,
+    handle_mouse_click,
     draw_timer,
-    load_images,
-    screen
-    #draw_icons
+    update_timer,
+    draw_icons
 )
+from util import start_simulation, end_simulation
 
 
-pieces = load_images()
 
 # Game başlat
-fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+fen = 'rnbqkbnr/ppppppPp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
 game = Game(
     fen,
-    screen,
-    pieces
 )
 
 # Ana oyun döngüsü
 def run(game):
     running = True
     while running:
-        draw_board(game.screen, game.board, game.square_size, game.white, game.brown)
-        highlight_selected_square(game.screen, game.selected_square, game.square_size)
-        draw_pieces(game.screen, game.board, game.pieces, game.square_size)
-        highlight_valid_moves(game.screen, game.valid_moves, game.square_size,game.board)
-        highlight_check_square(game.screen, game.get_check_square(), game.square_size)
-        draw_timer(game.screen, game.white_time, game.black_time, game.font)
-        #draw_icons(game.screen)
+        draw_board(game.board)
+        highlight_selected_square(game.selected_square)
+        draw_pieces(game.board)
+        highlight_valid_moves(game.valid_moves, game.board)
+        highlight_check_square(game.get_check_square())
+        update_timer(game)
+        draw_icons(game)
+        draw_timer(game.white_time, game.black_time, game.turn)
         pygame.display.flip()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                game.handle_mouse_click(pygame.mouse.get_pos())
+                start_simulation()
+                handle_mouse_click(game, pygame.mouse.get_pos())
+                # end_simulation()
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_LEFT:
                     game.go_back()

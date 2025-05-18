@@ -1,25 +1,9 @@
-import pygame
 import time
+import sounds
 
 class Game:
-    def __init__(self, fen, screen, pieces):
-        self.screen = screen
-        pygame.display.set_caption("Chess")
-        self.font = pygame.font.SysFont('arial', 48)
+    def __init__(self, fen):
         self.board = self.fen_to_board(fen)
-
-        self.screen = screen
-        self.pieces = pieces
-        self.width, self.height = 840, 640
-        self.rows, self.cols = 8, 8
-        self.square_size = self.height // self.cols
-        self.white = (240, 217, 181)
-        self.brown = (181, 136, 99)
-        self.black = (0, 0, 0)
-
-        self.move_sound = pygame.mixer.Sound("sounds/move.mp3")
-        self.capture_sound = pygame.mixer.Sound("sounds/capture.mp3")
-        self.check_mate_sound = pygame.mixer.Sound("sounds/checkmate.mp3")
 
         self.selected_square = None
         self.draw_offer_white = False
@@ -119,52 +103,6 @@ class Game:
             if 0 <= r < 8 and 0 <= c < 8:
                 moves.append((r, c))
         return moves
-    def promote_pawn(self, row, col, piece):
-        promotion_piece = None
-
-        if piece.isupper():
-            options = ['Q', 'R', 'N', 'B']
-            start_row = 0 
-            direction = 1
-        else:  
-            options = ['b', 'n', 'r', 'q']
-            start_row = row - 3  
-            direction = 1
-
-        selecting = True
-        while selecting:
-            self.draw_board()
-            self.highlight_selected_square()
-            self.draw_pieces()
-            self.update_timer()
-            self.draw_timer()
-
-            for i, opt in enumerate(options):
-                x = col * square_size
-                y = (start_row + i * direction) * square_size
-
-                pygame.draw.rect(self.screen, (200, 200, 200), (x, y, square_size, square_size))
-                self.screen.blit(pieces[opt], (x, y))
-
-            pygame.display.flip()
-
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    exit()
-                elif event.type == pygame.MOUSEBUTTONDOWN:
-                    mx, my = pygame.mouse.get_pos()
-                    selected_col = mx // square_size
-                    selected_row = my // square_size
-
-                    for i in range(4):
-                        opt_row = start_row + i * direction
-                        if selected_row == opt_row and selected_col == col:
-                            promotion_piece = options[i]
-                            selecting = False
-                            break
-
-        self.board[row][col] = promotion_piece
 
     def get_rook_moves(self, row, col):
         moves = []
@@ -289,7 +227,7 @@ class Game:
         elif piece.lower() == 'p':
             return self.get_pawn_moves(row, col)
         return []
-    def move_piece(self, start_pos, end_pos):
+    def move_piece(self, start_pos, end_pos, promote_to=None):
         self.en_passant_target = None
 
         start_row, start_col = start_pos
@@ -304,9 +242,9 @@ class Game:
             self.halfmove_clock += 1 
 
         if target != "." or (piece.lower() == 'p' and start_col != end_col and self.board[end_row][end_col] == "."):
-            self.capture_sound.play()  
+            sounds.capture_sound.play()  
         else:
-            self.move_sound.play()
+            sounds.move_sound.play()
 
         if piece.lower() == 'p' and abs(end_row - start_row) == 2:
             self.en_passant_target = ((start_row + end_row) // 2, start_col)
@@ -347,10 +285,8 @@ class Game:
                     self.board[0][3] = 'r'
                     self.board[0][0] = '.'
 
-        if piece == 'P' and end_row == 0:
-            self.promote_pawn(end_row, end_col, piece)
-        elif piece == 'p' and end_row == 7:
-            self.promote_pawn(end_row, end_col, piece)
+        if promote_to:
+            self.board[end_row][end_col] = promote_to
 
         if self.turn == 'b':
             self.fullmove_number += 1
@@ -368,8 +304,10 @@ class Game:
         self.is_gameover(self.turn)
         self.check_draw_conditions()
 
+
     def switch_turn(self):
         self.turn = 'b' if self.turn == 'w' else 'w'
+
     def get_valid_moves(self, row, col):
         original_piece = self.board[row][col]
         color = 'w' if original_piece.isupper() else 'b'
@@ -428,7 +366,7 @@ class Game:
     def is_gameover(self, color):
         if self.halfmove_clock == 75:
             print("75 moves have passed, it's a forced draw.")
-            self.check_mate_sound.play()
+            sounds.check_mate_sound.play()
             self.game_over = True
         elif not self.has_legal_moves(color):
             if self.is_in_check(color):
@@ -438,7 +376,7 @@ class Game:
                     print("Checkmate, White Won!")
             else:    
                 print("Stalemate!")
-            self.check_mate_sound.play()
+            sounds.check_mate_sound.play()
             self.game_over = True
         else:
             self.game_over = False
@@ -490,112 +428,6 @@ class Game:
 
         return not in_check
 
-    def update_timer(self):
-        if self.game_over:
-            return
-
-        now = time.time()
-        elapsed = now - self.last_time
-        self.last_time = now
-
-        if self.turn == 'w':
-            self.white_time -= elapsed
-            if self.white_time <= 0:
-                self.white_time = 0
-                self.game_over = True
-                print("White's time is up, Black wins!")
-        else:
-            self.black_time -= elapsed
-            if self.black_time <= 0:
-                self.black_time = 0
-                self.game_over = True
-                print("Black's time is up, White wins!")
-    def format_time(self, seconds):
-        minutes = int(seconds) // 60
-        secs = int(seconds) % 60
-        return f"{minutes:02}:{secs:02}"
-    ''' def draw_timer(self):
-        font = pygame.font.SysFont('arial', 36, bold=True)
-        box_width, box_height = 130, 50
-        black_pos = (665, 90)
-        white_pos = (665, 490)
-
-        white_bg = (0, 100, 0) if self.turn == 'w' else (80, 80, 80)
-        black_bg = (0, 100, 0) if self.turn == 'b' else (80, 80, 80)
-
-        pygame.draw.rect(self.screen, white_bg, (*white_pos, box_width, box_height), border_radius=8)
-        pygame.draw.rect(self.screen, black_bg, (*black_pos, box_width, box_height), border_radius=8)
-
-        white_text = font.render(self.format_time(self.white_time), True, white)
-        black_text = font.render(self.format_time(self.black_time), True, white)
-
-        self.screen.blit(white_text, (white_pos[0] + 10, white_pos[1] + 7))
-        self.screen.blit(black_text, (black_pos[0] + 10, black_pos[1] + 7))'''
-    def draw_icons(self):
-        pygame.draw.rect(self.screen, (50,50,50), (740, 440, 100, 50))
-        pygame.draw.rect(self.screen, (50,50,50), (740, 160, 100, 50))  
-
-        font = pygame.font.SysFont('arial', 26)
-        x_font = pygame.font.SysFont('arial', 18)
-        self.icon_buttons = {}
-
-        positions = {
-            "white_draw": (740, 440),
-            "white_resign": (700, 440),
-            "black_draw": (740, 160),
-            "black_resign": (700, 160)
-        }
-
-        normal = (30, 30)
-        active = (40, 40)
-
-        if self.draw_offer_white:
-            rect = pygame.Rect(positions["white_draw"], active)
-            pygame.draw.rect(self.screen, (160, 100, 100), rect, border_radius=5)
-            text = font.render("½", True, (255, 255, 255))
-            self.screen.blit(text, text.get_rect(center=rect.center))
-            self.icon_buttons["white_draw"] = rect
-
-            cancel_rect = pygame.Rect(rect.right + 5, rect.top, 20, 20)
-            x_text = x_font.render("×", True, (255, 255, 255))
-            self.screen.blit(x_text, x_text.get_rect(center=cancel_rect.center))
-            self.icon_buttons["white_draw_cancel"] = cancel_rect
-        else:
-            rect = pygame.Rect(positions["white_draw"], normal)
-            pygame.draw.rect(self.screen, (100, 100, 100), rect, border_radius=5)
-            text = font.render("½", True, (255, 255, 255))
-            self.screen.blit(text, text.get_rect(center=rect.center))
-            self.icon_buttons["white_draw"] = rect
-
-        if self.draw_offer_black:
-            rect = pygame.Rect(positions["black_draw"], active)
-            pygame.draw.rect(self.screen, (160, 100, 100), rect, border_radius=5)
-            text = font.render("½", True, (255, 255, 255))
-            self.screen.blit(text, text.get_rect(center=rect.center))
-            self.icon_buttons["black_draw"] = rect
-
-            cancel_rect = pygame.Rect(rect.right + 5, rect.top, 20, 20)
-            x_text = x_font.render("×", True, (255, 255, 255))
-            self.screen.blit(x_text, x_text.get_rect(center=cancel_rect.center))
-            self.icon_buttons["black_draw_cancel"] = cancel_rect
-        else:
-            rect = pygame.Rect(positions["black_draw"], normal)
-            pygame.draw.rect(self.screen, (100, 100, 100), rect, border_radius=5)
-            text = font.render("½", True, (255, 255, 255))
-            self.screen.blit(text, text.get_rect(center=rect.center))
-            self.icon_buttons["black_draw"] = rect
-
-        rect = pygame.Rect(positions["white_resign"], normal)
-        pygame.draw.rect(self.screen, (100, 100, 100), rect, border_radius=5)
-        flag = font.render("🚩", True, (255, 255, 255))
-        self.screen.blit(flag, flag.get_rect(center=rect.center))
-        self.icon_buttons["white_resign"] = rect
-
-        rect = pygame.Rect(positions["black_resign"], normal)
-        pygame.draw.rect(self.screen, (100, 100, 100), rect, border_radius=5)
-        flag = font.render("🚩", True, (255, 255, 255))
-        self.screen.blit(flag, flag.get_rect(center=rect.center))
-        self.icon_buttons["black_resign"] = rect
 
 
 
@@ -640,62 +472,3 @@ class Game:
                 self.is_gameover(self.turn)
             else:
                 self.is_gameover(enemy_color)   
-    def handle_mouse_click(self, pos):
-        if self.game_over:
-            return
-        '''if "white_draw_cancel" in self.icon_buttons and self.icon_buttons["white_draw_cancel"].collidepoint(pos):
-            self.draw_offer_white = False
-
-        if "black_draw_cancel" in self.icon_buttons and self.icon_buttons["black_draw_cancel"].collidepoint(pos):
-            self.draw_offer_black = False
-
-        if self.icon_buttons["white_draw"].collidepoint(pos):
-            self.draw_offer_white = not self.draw_offer_white
-            if self.draw_offer_white:
-                print("White has offered a draw.")
-                if self.check_draw_conditions():
-                    print("Draw conditions have been met. The game ended in a draw.")
-                    self.game_over = True
-            if self.draw_offer_white and self.draw_offer_black:
-                print("Both players offered a draw. The game ended in a draw.")
-                self.game_over = True
-        
-        if self.icon_buttons["black_draw"].collidepoint(pos):
-            self.draw_offer_black = not self.draw_offer_black
-            if self.draw_offer_black:
-                print("Black has offered a draw.")
-                if self.check_draw_conditions():
-                    print("Draw conditions have been met. The game ended in a draw.")
-                    self.game_over = True
-            if self.draw_offer_white and self.draw_offer_black:
-                print("Both players offered a draw. The game ended in a draw.")
-                self.game_over = True
-
-        if self.icon_buttons["white_resign"].collidepoint(pos):
-            print("White resigned. Black wins.")
-            self.game_over = True
-
-        if self.icon_buttons["black_resign"].collidepoint(pos):
-            print("Black resigned. White wins.")
-            self.game_over = True'''
-        
-        if self.game_over == True:
-            self.check_mate_sound.play()
-            return
-
-        col = pos[0] // self.square_size
-        row = pos[1] // self.square_size
-        if 0 <= row < 8 and 0 <= col < 8:
-            piece = self.board[row][col]
-            if self.selected_square and (row, col) in self.valid_moves:
-                self.move_piece(self.selected_square, (row, col))
-            elif self.is_current_players_piece(piece):
-                if self.selected_square == (row, col):
-                    self.selected_square = None
-                    self.valid_moves = []
-                else:
-                    self.selected_square = (row, col)
-                    self.valid_moves = self.get_valid_moves(row, col)
-            else:
-                self.selected_square = None
-                self.valid_moves = []
