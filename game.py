@@ -1,4 +1,5 @@
 import time
+import random
 import sounds
 
 class Game:
@@ -227,6 +228,21 @@ class Game:
         elif piece.lower() == 'p':
             return self.get_pawn_moves(row, col)
         return []
+    def make_ai_move(self, ai_color='b'):
+        if self.turn != ai_color:
+            pass
+        else:
+            all_moves = []
+            for row in range(8):
+                for col in range(8):
+                    piece = self.board[row][col]
+                    if piece != "." and ((ai_color == 'w' and piece.isupper()) or (ai_color == 'b' and piece.islower())):
+                        moves = self.get_valid_moves(row, col)
+                        for move in moves:
+                            all_moves.append(((row, col), move))
+            if all_moves:
+                move = random.choice(all_moves)
+                self.move_piece(*move)
     def move_piece(self, start_pos, end_pos, promote_to=None):
         self.en_passant_target = None
 

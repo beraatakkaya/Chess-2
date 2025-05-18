@@ -1,4 +1,5 @@
 import pygame
+import sounds
 import time
 
 pygame.init()
@@ -27,7 +28,45 @@ def load_images():
 
 pieces = load_images()
 
+def main_menu():
+    pygame.display.set_caption("Chess Main Menu")
+    font = pygame.font.SysFont('arial', 48)
+    small_font = pygame.font.SysFont('arial', 28)
+
+    while True:
+        screen.fill((50, 50, 50))
+
+        title = font.render("Chess Game", True, (255, 255, 255))
+        screen.blit(title, (width//2 - title.get_width()//2, 100))
+
+        pvp_button = pygame.Rect(width//2 - 150, 250, 300, 60)
+        ai_button = pygame.Rect(width//2 - 150, 350, 300, 60)
+
+        pygame.draw.rect(screen, (100, 100, 250), pvp_button, border_radius=10)
+        pygame.draw.rect(screen, (100, 250, 100), ai_button, border_radius=10)
+
+        pvp_text = small_font.render("Player vs Player", True, (255, 255, 255))
+        ai_text = small_font.render("Player vs Computer", True, (255, 255, 255))
+
+        screen.blit(pvp_text, (pvp_button.centerx - pvp_text.get_width()//2, pvp_button.centery - pvp_text.get_height()//2))
+        screen.blit(ai_text, (ai_button.centerx - ai_text.get_width()//2, ai_button.centery - ai_text.get_height()//2))
+
+        pygame.display.flip()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if pvp_button.collidepoint(event.pos):
+                    pygame.event.clear(pygame.MOUSEBUTTONDOWN)
+                    return "pvp"
+                elif ai_button.collidepoint(event.pos):
+                    pygame.event.clear(pygame.MOUSEBUTTONDOWN)
+                    return "ai"
+
 def draw_board(board):
+    screen.fill((50, 50, 50))
     font = pygame.font.SysFont(None, 24) 
     files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
     ranks = ['8', '7', '6', '5', '4', '3', '2', '1']
@@ -78,9 +117,6 @@ def highlight_check_square(king_pos):
 
 
 def draw_icons(game):
-    pygame.draw.rect(screen, (50,50,50), (740, 440, 100, 50))
-    pygame.draw.rect(screen, (50,50,50), (740, 160, 100, 50))  
-
     font = pygame.font.SysFont('arial', 26)
     x_font = pygame.font.SysFont('arial', 18)
     game.icon_buttons = {}
@@ -190,7 +226,9 @@ def draw_timer(white_time, black_time, turn):
 
 
 
-def handle_mouse_click(game, pos):
+def handle_mouse_click(game, pos, ai_color = None):
+    if ai_color == game.turn:
+        return
     if game.game_over:
         return
     if "white_draw_cancel" in game.icon_buttons and game.icon_buttons["white_draw_cancel"].collidepoint(pos):
@@ -230,7 +268,7 @@ def handle_mouse_click(game, pos):
         game.game_over = True
     
     if game.game_over == True:
-        game.check_mate_sound.play()
+        sounds.check_mate_sound.play()
         return
 
     col = pos[0] // square_size
