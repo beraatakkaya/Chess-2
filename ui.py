@@ -4,19 +4,16 @@ import time
 pygame.init()
 pygame.display.set_caption("Chess")
 
-# Ekran ayarları
 width, height = 840, 640
 rows, cols = 8, 8
 square_size = height // cols
 screen = pygame.display.set_mode((width, height))
 pygame.display.set_caption("Chess")
 
-# Renkler
 white = (240, 217, 181)
 brown = (181, 136, 99)
 black = (0, 0, 0)
 
-# Font
 font = pygame.font.SysFont('Arial', 24)
 
 def load_images():
@@ -31,11 +28,23 @@ def load_images():
 pieces = load_images()
 
 def draw_board(board):
+    font = pygame.font.SysFont(None, 24) 
+    files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+    ranks = ['8', '7', '6', '5', '4', '3', '2', '1']
     for row in range(8):
         for col in range(8):
             color = white if (row + col) % 2 == 0 else brown
             rect = pygame.Rect(col * square_size, row * square_size, square_size, square_size)
             pygame.draw.rect(screen, color, rect)
+
+            text_color = brown if color == white else white
+            if col == cols - 1:
+                rank_label = font.render(ranks[row], True, text_color)
+                screen.blit(rank_label, (col * square_size + square_size - 15, row * square_size + 5))
+            if row == 7:
+                file_label = font.render(files[col], True, text_color)
+                screen.blit(file_label, (col * square_size + 5,screen.get_height() - 20))
+
 
 def draw_pieces(board):
     for row in range(8):

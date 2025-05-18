@@ -1,4 +1,3 @@
-# main.py
 import pygame
 from game import Game
 from ui import (
@@ -12,17 +11,13 @@ from ui import (
     update_timer,
     draw_icons
 )
-from util import start_simulation, end_simulation
+#from util import start_simulation, end_simulation
 
-
-
-# Game başlat
 fen = 'rnbqkbnr/ppppppPp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
 game = Game(
     fen,
 )
 
-# Ana oyun döngüsü
 def run(game):
     running = True
     while running:
@@ -40,9 +35,8 @@ def run(game):
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                start_simulation()
                 handle_mouse_click(game, pygame.mouse.get_pos())
-                # end_simulation()
+
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_LEFT:
                     game.go_back()
