@@ -1,6 +1,7 @@
 from copy import deepcopy
 
 def evaluate_board(game, color: str) -> int:
+
     values = {
         'P': 1, 'N': 3, 'B': 3,
         'R': 5, 'Q': 9, 'K': 0
@@ -21,8 +22,10 @@ def evaluate_board(game, color: str) -> int:
                 total -= val
     return total
 
-def minimax(game, depth, maximizing_player, ai_color):
-    if depth == 0 or game.game_over:
+from copy import deepcopy
+
+def minimax(game, depth, alpha, beta, maximizing_player, ai_color):
+    if depth == 0:
         return evaluate_board(game, ai_color), None
 
     best_move = None
@@ -40,19 +43,25 @@ def minimax(game, depth, maximizing_player, ai_color):
         max_eval = float('-inf')
         for start, end in all_moves:
             new_game = deepcopy(game)
-            new_game.move_piece(start, end)
-            eval, _ = minimax(new_game, depth - 1, False, ai_color)
+            new_game.move_piece(start, end, simulate=True)
+            eval, _ = minimax(new_game, depth - 1, alpha, beta, False, ai_color)
             if eval > max_eval:
                 max_eval = eval
                 best_move = (start, end)
+            alpha = max(alpha, eval)  # ✅ Alpha güncellenir
+            if beta <= alpha:
+                break  # ✅ Budama (Pruning)
         return max_eval, best_move
     else:
         min_eval = float('inf')
         for start, end in all_moves:
             new_game = deepcopy(game)
-            new_game.move_piece(start, end)
-            eval, _ = minimax(new_game, depth - 1, True, ai_color)
+            new_game.move_piece(start, end, simulate=True)
+            eval, _ = minimax(new_game, depth - 1, alpha, beta, True, ai_color)
             if eval < min_eval:
                 min_eval = eval
                 best_move = (start, end)
+            beta = min(beta, eval)  # ✅ Beta güncellenir
+            if beta <= alpha:
+                break  # ✅ Budama (Pruning)
         return min_eval, best_move

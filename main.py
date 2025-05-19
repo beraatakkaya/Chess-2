@@ -16,17 +16,16 @@ from ui import (
 )
 #from util import start_simulation, end_simulation
 
-fen = 'rnb1kbnr/ppp1pppp/8/1KPp2q1/8/8/PP1PPPPP/RNBQ1BNR w kq d6 0 1'
+fen = 'rnb1k2r/pp1ppppp/1Q5b/3q3b/8/4q2n/PPPP2PP/RNB1KBNR w KQkq - 0 1'
 
 game = Game(fen)
 
 def run(game):
     running = True
     choice = main_menu()
-    ai_color = 'w' if choice =='ai' else None
+    ai_color = 'b' if choice =='ai' else None
     
     while running:
-
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -49,7 +48,8 @@ def run(game):
         pygame.display.flip()
 
         if not game.game_over and ai_color == game.turn:
-            _, best_move = minimax(game, 3, True, ai_color) 
+            _, best_move = minimax(game, depth=4, alpha=float('-inf'), beta=float('inf'),
+                           maximizing_player=True, ai_color=ai_color) 
             if best_move:
                 game.move_piece(*best_move)
 

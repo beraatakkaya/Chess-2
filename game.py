@@ -22,7 +22,7 @@ class Game:
         enemy_color = 'b' if self.turn == 'w' else 'w'
         self.halfmove_clock = int(fen.split()[4])
         self.fullmove_number = int(fen.split()[5])
-        self.is_gameover(enemy_color)
+       # self.is_gameover(enemy_color)
 
     def fen_to_board(self, fen):
         board = []
@@ -228,22 +228,7 @@ class Game:
         elif piece.lower() == 'p':
             return self.get_pawn_moves(row, col)
         return []
-    def make_ai_move(self, ai_color='b'):
-        if self.turn != ai_color:
-            pass
-        else:
-            all_moves = []
-            for row in range(8):
-                for col in range(8):
-                    piece = self.board[row][col]
-                    if piece != "." and ((ai_color == 'w' and piece.isupper()) or (ai_color == 'b' and piece.islower())):
-                        moves = self.get_valid_moves(row, col)
-                        for move in moves:
-                            all_moves.append(((row, col), move))
-            if all_moves:
-                move = random.choice(all_moves)
-                self.move_piece(*move)
-    def move_piece(self, start_pos, end_pos, promote_to=None):
+    def move_piece(self, start_pos, end_pos, promote_to=None,simulate=False):
         self.en_passant_target = None
 
         start_row, start_col = start_pos
@@ -257,9 +242,9 @@ class Game:
         else:
             self.halfmove_clock += 1 
 
-        if target != "." or (piece.lower() == 'p' and start_col != end_col and self.board[end_row][end_col] == "."):
+        if (target != "." or (piece.lower() == 'p' and start_col != end_col and self.board[end_row][end_col] == ".")) and not simulate:
             sounds.capture_sound.play()  
-        else:
+        elif not simulate:
             sounds.move_sound.play()
 
         if piece.lower() == 'p' and abs(end_row - start_row) == 2:
@@ -267,10 +252,17 @@ class Game:
 
         if piece.lower() == 'p' and (start_col != end_col) and self.board[end_row][end_col] == ".":
             self.board[start_row][end_col] = "."
-
+        if self.board[end_row][end_col].lower() == 'r':
+            if end_row == 7 and end_col == 0:
+                self.castling_rights = self.castling_rights.replace('Q', '')
+            elif end_row == 7 and end_col == 7:
+                self.castling_rights = self.castling_rights.replace('K', '')
+            elif end_row == 0 and end_col == 0:
+                self.castling_rights = self.castling_rights.replace('q', '')
+            elif end_row == 0 and end_col == 7:
+                self.castling_rights = self.castling_rights.replace('k', '')   
         self.board[end_row][end_col] = piece
-
-        if piece == 'K':
+        if piece == 'k':
             self.castling_rights = self.castling_rights.replace('K', '').replace('Q', '')
         elif piece == 'k':
             self.castling_rights = self.castling_rights.replace('k', '').replace('q', '')
@@ -311,14 +303,16 @@ class Game:
         self.valid_moves = []                
         self.switch_turn()            
         fen = self.board_to_fen()
-        print(fen)
         self.history = self.history[:self.history_index + 1]
         self.history.append((fen, self.white_time, self.black_time))  
         self.history_index += 1
         self.board = self.fen_to_board(fen)
-
-        self.is_gameover(self.turn)
-        self.check_draw_conditions()
+        if not simulate:
+            self.is_gameover(self.turn)
+            self.check_draw_conditions()
+            print(fen)
+            #print(self.history)
+           # print(len(self.history))
 
 
     def switch_turn(self):
@@ -336,10 +330,9 @@ class Game:
             ep_captured_piece = None
             ep_row, ep_col = -1, -1
 
-            # En passant kontrolü
             if original_piece.lower() == 'p' and self.en_passant_target == (r, c) and self.board[r][c] == "." and col != c:
                 en_passant = True
-                ep_row = row  # Yani aynı satırda
+                ep_row = row 
                 ep_col = c
                 ep_captured_piece = self.board[ep_row][ep_col]
                 self.board[ep_row][ep_col] = "."
@@ -353,7 +346,6 @@ class Game:
             self.board[row][col] = original_piece
             self.board[r][c] = captured
 
-            # En passant alınan piyonu geri koy
             if en_passant:
                 self.board[ep_row][ep_col] = ep_captured_piece
 
